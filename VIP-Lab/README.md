@@ -4,6 +4,8 @@ This lab publishes an Ubuntu HTTP server on the outside address of a FortiGate. 
 
 ## Topology
 
+![VIP lab topology](Topology.png)
+
 ```text
 Kali client                         FortiGate                         Ubuntu web server
 198.51.100.10/24  ── TCP/8080 ──>  port1: 198.51.100.1/24
@@ -24,7 +26,11 @@ On Ubuntu, I started Python's simple HTTP server on port 80:
 sudo python3 -m http.server 80
 ```
 
-I first confirmed the server was responding on the internal network at `10.2.0.100:80`. Keeping this test separate helped confirm that the web service itself was available before testing the VIP from Kali.
+I first confirmed the server was responding on the internal network at `10.2.0.100:80`.
+
+![Ubuntu web server responding on the internal network](ubuntu_server_test_success.png)
+
+Keeping this test separate helped confirm that the web service itself was available before testing the VIP from Kali.
 
 ### 2. Created the VIP
 
@@ -40,9 +46,15 @@ I configured a port-forwarding VIP on FortiGate with:
 
 The VIP performs destination NAT (DNAT): the client connects to `198.51.100.1:8080`, and FortiGate forwards the translated connection to `10.2.0.100:80`.
 
+![FortiGate VIP configuration](VIP_config.png)
+
 ### 3. Added the WAN-to-server firewall policy
 
 I created the inbound policy from `port1` to `port2`, using the VIP object as the destination and allowing the traffic. The policy is commonly described in the lab as the **WAN-to-WEBSERVER** policy. The service selection became the key troubleshooting point below.
+
+![Firewall state before the policy test](Before_policy.png)
+
+![Firewall policy after it was added](After_policy.png)
 
 ### 4. Tested from Kali
 
@@ -54,15 +66,27 @@ curl -v http://198.51.100.1:8080
 
 The expected successful result is an HTTP response from the Python server (HTTP 200 in the captured test). This confirms that the outside port is still 8080 for the client.
 
+![Successful HTTP 200 response from Kali](kali_success_200.png)
+
+![FortiGate traffic log showing the allowed session](Traficc_log_passed.png)
+
 ## Troubleshooting: policy service versus VIP port
 
 At first, the policy used a custom `TCP-8080` service. The request did not pass as expected. I changed the policy service to `ALL`, and the connection worked. That narrowed the issue to policy matching rather than the server, routing, or VIP: the VIP was forwarding the request, but the restrictive service selection did not match the translated traffic as configured.
 
 I used FortiGate debug flow to follow the packet and inspect the drop. The useful things to check in the output are the incoming interface, VIP/DNAT translation, policy match (or lack of one), and the final drop reason. In this run, the debug showed the destination being translated from `198.51.100.1:8080` to `10.2.0.100:80`, followed by the traffic failing to match the intended policy and reaching the implicit deny.
 
+![Debug flow showing the denied traffic](DEBUG_output_denied.png)
+
+![Kali test with the custom TCP-8080 service](Custom_port_8080_failed.png)
+
 > **Correction to my first explanation:** saying that every firewall policy lookup simply uses the translated port was too broad. The observed result in this lab was that the custom `TCP-8080` policy service failed while `ALL` passed. The reliable way to understand a VIP/policy interaction is to check the actual debug flow and policy configuration for that FortiOS version and traffic path, rather than assume the external port or mapped port without evidence.
 
-After reviewing the port mapping and the policy behavior, I set the policy service to the built-in **HTTP** service and retested successfully. The HTTP service allows TCP/80 for the web server side of this port-forwarding setup. It does **not** edit the VIP or change the client-facing port. The VIP remains `198.51.100.1:8080 → 10.2.0.100:80`, and Kali still runs:
+After reviewing the port mapping and the policy behavior, I set the policy service to the built-in **HTTP** service and retested successfully. The HTTP service allows TCP/80 for the web server side of this port-forwarding setup.
+
+![Firewall policy after selecting HTTP](Firewall_policy_after_http.png)
+
+It does **not** edit the VIP or change the client-facing port. The VIP remains `198.51.100.1:8080 → 10.2.0.100:80`, and Kali still runs:
 
 ```bash
 curl -v http://198.51.100.1:8080
@@ -99,20 +123,3 @@ Confirm it references the VIP destination and the intended service (`HTTP` after
 - A working service with policy service `ALL`, followed by a failed restrictive service, is a useful clue that policy matching needs investigation.
 - Debug flow made the translation and policy decision visible and helped locate the failure.
 - Don't guess which port the policy will match from the external port alone; verify the actual path and matching behavior.
-
-## Screenshots
-
-Screenshots captured during the lab are kept beside this write-up:
-
-| Screenshot | What it shows |
-| --- | --- |
-| [Topology](Topology.png) | Lab network layout |
-| [Ubuntu server test](ubuntu_server_test_success.png) | HTTP server responds on the internal side |
-| [VIP configuration](VIP_config.png) | External-to-mapped address/port settings |
-| [Before policy](Before_policy.png) | Initial state before the firewall policy test |
-| [After policy](After_policy.png) | Firewall policy in place |
-| [Debug flow drop](DEBUG_output_denied.png) | Troubleshooting output for the denied traffic |
-| [Custom TCP/8080 failure](Custom_port_8080_failed.png) | Test with the custom service that did not match |
-| [Policy using HTTP](Firewall_policy_after_http.png) | Corrected policy service |
-| [Kali HTTP 200](kali_success_200.png) | Successful external request from Kali |
-| [Traffic log passed](Traficc_log_passed.png) | FortiGate traffic log showing the allowed session |
