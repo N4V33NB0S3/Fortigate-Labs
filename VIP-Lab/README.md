@@ -76,6 +76,15 @@ At first, the policy used a custom `TCP-8080` service. The request did not pass 
 
 I used FortiGate debug flow to follow the packet and inspect the drop. The useful things to check in the output are the incoming interface, VIP/DNAT translation, policy match (or lack of one), and the final drop reason. In this run, the debug showed the destination being translated from `198.51.100.1:8080` to `10.2.0.100:80`, followed by the traffic failing to match the intended policy and reaching the implicit deny.
 
+```bash
+diagnose debug reset
+diagnose debug flow filter clear
+diagnose debug flow filter addr 198.51.100.10
+diagnose debug flow show function-name enable
+diagnose debug flow show iprope enable
+diagnose debug enable
+diagnose debug flow trace start 10
+```
 ![Debug flow showing the denied traffic](DEBUG_output_denied.png)
 
 ![Kali test with the custom TCP-8080 service](Custom_port_8080_failed.png)
