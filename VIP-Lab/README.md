@@ -51,10 +51,10 @@ The VIP performs destination NAT (DNAT): the client connects to `198.51.100.1:80
 ### 3. Added the WAN-to-server firewall policy
 
 I created the inbound policy from `port1` to `port2`, using the VIP object as the destination and allowing the traffic. The policy is commonly described in the lab as the **WAN-to-WEBSERVER** policy. The service selection became the key troubleshooting point below.
-**Before**
+###Before
 ![Firewall state before the policy test](Before_policy.png)
 
-**After**
+###After
 ![Firewall policy after it was added](After_policy.png)
 
 ### 4. Tested from Kali
